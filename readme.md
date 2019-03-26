@@ -1,0 +1,1 @@
+This is the git repository for the CS504 group Socrates. In this repository you will find code used to download and analyze the data set for our course project.
