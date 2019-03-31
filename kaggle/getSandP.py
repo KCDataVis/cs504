@@ -4,15 +4,36 @@ from concurrent import futures
 import pandas as pd
 from pandas import DataFrame
 import pandas_datareader.data as web
+import requests 
+
+def get_name_industry(stock):
+	"""separate query to IEX for industry since it is not included in pandas library"""
+	iex_endpoint = "https://api.iextrading.com/1.0/stock/" + stock + "/company"
+	results = requests.get(url=iex_endpoint).json()
+	company_data = {'name': results['companyName'], 'industry': results['industry']}
+	return(company_data)
 
 def download_stock(stock):
 	""" try to query the iex for a stock, if failed note with print """
 	try:
+		pass
 		print(stock)
-		stock_df = web.DataReader(stock,'iex', start_time, now_time)
-		stock_df['Name'] = stock
+		# data reader library is deprecated, use normal chart query for data
+		# stock_df = web.DataReader(stock,'iex', start_time, now_time)
+		iex_endpoint = "https://api.iextrading.com/1.0/stock/" + stock + "/chart/5y"
+		results = requests.get(url=iex_endpoint)
+		company_name_and_industry = get_name_industry(stock)
+		company_data = results.json()
+		stock_df = pd.DataFrame(company_data)
+		# extract to df object to mimick previous logic
+		stock_df['symbol'] = stock
+		stock_df['industry'] = company_name_and_industry['industry']
+		stock_df['name'] = company_name_and_industry['name']
+		stock_df.drop(['changeOverTime', 'changePercent', 'label', 'unadjustedVolume', 'vwap', 'change'], 1, inplace=True)
+		stock_df.set_index('date')
+		stock_df = stock_df[['date', 'name', 'symbol', 'industry', 'open', 'high', 'low', 'close', 'volume']]
 		output_name = stock + '_data.csv'
-		stock_df.to_csv(output_name)
+		stock_df.to_csv(output_name, index=False)
 	except:
 		bad_names.append(stock)
 		print('bad: %s' % (stock))
@@ -77,7 +98,7 @@ if __name__ == '__main__':
 	with futures.ThreadPoolExecutor(workers) as executor:
 		res = executor.map(download_stock, s_and_p)
 
-	
+	download_stock(s_and_p[0])
 	""" Save failed queries to a text file to retry """
 	if len(bad_names) > 0:
 		with open('failed_queries.txt','w') as outfile:
@@ -85,9 +106,8 @@ if __name__ == '__main__':
 				outfile.write(name+'\n')
 
 	#timing:
-	finish_time = datetime.now()
-	duration = finish_time - now_time
-	minutes, seconds = divmod(duration.seconds, 60)
-	print('getSandP_threaded.py')
-	print(f'The threaded script took {minutes} minutes and {seconds} seconds to run.')
-	#The threaded script took 0 minutes and 31 seconds to run.
+	# finish_time = datetime.now()
+	# duration = finish_time - now_time
+	# minutes, seconds = divmod(duration.seconds, 60)
+	# print('getSandP_threaded.py')
+	#print("The threaded script took " + str(minutes) + " minutes and " + str(seconds) + " seconds to run.")
