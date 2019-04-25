@@ -30,10 +30,10 @@ def plotTicker(df, ticker, start_time='beginning',days='all', title="none"):
     plt.ylabel("Stock Closing Price")
     
 def plotMatch(ya, pred, yeval, xvalst, xvalsp, title='def',xy='none',
-              savefile='none'):
+              savefile='none',label='',color='g',label_act=False):
     '''
         plotMatch(ya, pred, yeval, xvalst, xvalsp, title='def',xy='none',
-        savefile='none')
+        savefile='none',label='',color='g',label_act=False)
             Visualize the forecast compared with the actual price trend
             
             Parameters
@@ -57,20 +57,41 @@ def plotMatch(ya, pred, yeval, xvalst, xvalsp, title='def',xy='none',
                 to the real price history
             savefile : str ; default None
                 file to save the visualization off to
+            label : str ; default ''
+                If label is not defaulted, do NOT show a legend and apply
+                the value of label to the label of the forecast in the 
+                outputted plot
+            color : str ; default 'g'
+                Color of forecast. Only used when label is not set to default
+            label_act : boolean ; default False
+                Only used when label is not set to default. Dictates whether
+                or not historical performance is labelled as such
             
             Returns
             -------
             None
     '''
             
-    
-    plt.plot(xvalst, ya, label='Actual',color='b')
-    plt.plot(xvalsp, pred,label="Model Forecast",color='g')
+    plot_actual = False
     if len(yeval) == 0:
         pass
     else:
-        plt.plot(xvalsp, yeval, label='Actual)',color='r')
-    plt.legend(loc='best')
+        #plt.plot(xvalsp, yeval, label='Actual',color='r')
+        plot_actual = True
+    if label == '':
+        plt.plot(xvalsp, pred,label="Model Forecast",color='g')
+        plt.plot(xvalst, ya, label='Actual',color='b')
+        if plot_actual: plt.plot(xvalsp, yeval, label='Actual',color='r')
+        plt.legend(loc='best')
+    else:
+        plt.plot(xvalsp, pred,label=label,color=color)
+        plt.plot(xvalst, ya, color='b')
+        if plot_actual:
+            if label_act:
+                plt.plot(xvalsp, yeval, color='r',label='Actual')
+            else:
+                plt.plot(xvalsp, yeval, color='r')
+    
     plt.xlabel("Days")
     plt.ylabel("Stock Closing Price")
     if title == 'def':
@@ -150,10 +171,10 @@ def getDate(year, month, day):
 
 def match(df, pattern_length, pred_length, target, start_date, n_comp=20, 
           weighting=inverse, n_rand_start=50, random_seed='none',
-          pick_comparables=pick_comparables):
+          pick_comparables=pick_comparables, cheating=True):
     '''
        match(df, pattern_length, pred_length, target, start_date, n_comp=20,
-       weighting=inverse, n_rand_start=50) 
+       weighting=inverse, n_rand_start=50, cheating=True) 
            Output forecast of pred_length days for stock ticker equal to target
            
            Parameters
@@ -204,16 +225,29 @@ def match(df, pattern_length, pred_length, target, start_date, n_comp=20,
            containing columns 'LSE','Sls')
                Function that picks which similar stock charts to use
                to make the forecast of the target stock
+           cheating : boolean , default True
+               Is Socrates' Forecast allowed to use patterns from the same
+               timeframe as the target pattern? IE is the algorithm allowed
+               to 'cheat' by 'knowing' the overall market behaviour in the 
+               time during AND FOLLOWING the target chart pattern?
                
            Returns
            -------
-           ya, PRED, yEVAL, xvalst, xvalsp : all 5 outputs are 1-D numpy.array 
-           instances. PRED and yEVAL are of length pred_length; PRED is the
+           ya, PRED, yEVAL, xvalst, xvalsp, df_pats : first 5 outputs are 1-D 
+               numpy.array instances, df_pats is a pandas.DataFrame
+           
+           PRED and yEVAL are of length pred_length; PRED is the
            forecast, yEVAL is what your stock actually did over the prediction
            timeframe. xvalst, xvalsp are arrays of placeholders for days
            for plotting purposes. xvalst is length pattern_length, xvalsp
            is of length pred_length. ya is the actual prices over 
-           pattern_length. Plot with xvalst
+           pattern_length. Plot with xvalst.
+           
+           df_pats describes the 'predictor' stock chart patterns used to
+           create a forecast for the target stock. It contains the following
+           columns describing the quality of the fit with the target chart
+           pattern as well as the predictor's Name and the first day
+           of the predictor pattern. 
     '''
     
     pattern_time = pattern_length
@@ -226,13 +260,20 @@ def match(df, pattern_length, pred_length, target, start_date, n_comp=20,
     # did the user ask for a weekend or federal holiday? Lets make sure this
     # date is in the dataset
     notify = False
-    while len(df[(df['Name'] == target) & (df['date'] == mydate)]) == 0:
+    date_count = 0
+    while ((len(df[(df['Name'] == target) & (df['date'] == mydate)]) == 0) and 
+           date_count < 10):
         notify = True
         day += 1
         if day > 31:
             day = 22
+        date_count += 1
         mydate = getDate(year, month, day)
-             
+     
+    if date_count == 10:
+        print("Couldn't find valid start date. Make sure "+str(start_date)+" is\n"
+              +"in the time series of ticker: "+str(target))
+        return        
     if notify:
         print("Your begin date fell on a day in which the exchange wasn't open or your\
  stock wasn't being publicly traded. Changed date to: %4d-%02d-%02d"%(year,month,day))
@@ -283,6 +324,22 @@ def match(df, pattern_length, pred_length, target, start_date, n_comp=20,
         while cnt > 0:
             # pick a random starting point
             start = np.random.randint(0,len(dfss) - pattern_time - pred_time)
+            if cheating:
+                pass
+            else:
+                # define earliest and latest by stayout length
+                #
+                # not allowed to pick a random start that occurs within
+                # 
+                stayout_length = int(pattern_time/2)
+                
+                earliest = target_start_date - stayout_length
+                if earliest < 0: earliest = 0
+                
+                latest = target_start_date + stayout_length
+                
+                if start > earliest and start < latest:
+                    continue
             dfT = dfss.iloc[start:start+pattern_time]
             dfF = dfss.iloc[start+pattern_time:start+pred_time+pattern_time]
             
@@ -307,6 +364,10 @@ def match(df, pattern_length, pred_length, target, start_date, n_comp=20,
     DTsFit = []
     DTFutureFit = []
     Slss = []
+    Name = []
+    Volatility_daily = []
+    Volume = []
+    startpat = []
     
     for i in range(len(DTs)):
         
@@ -314,7 +375,12 @@ def match(df, pattern_length, pred_length, target, start_date, n_comp=20,
         Slss.append(Sls)
         DTsFit.append(Sls*DTs[i].closes)
         DTFutureFit.append(Sls*DTFuture[i].closes)
+        Name.append(DTs[i].name)
+        # take the average daily volatility & volume over pattern_length days
+        Volatility_daily.append(DTs[i].df.volatility_daily.mean())
+        Volume.append(DTs[i].df.volume.mean())
         
+        startpat.append(DTs[i].startDate)
         LSEs.append(getLSE(ya, DTsFit[-1]))
     
     # these LSEs are used for the weights we'll apply to the DTFuture
@@ -326,8 +392,12 @@ def match(df, pattern_length, pred_length, target, start_date, n_comp=20,
     # containing the LSE values + any values to be used in weighting
     # later on. This dataframe has to have indices that trace back to
     # indices in the DTsFutureFit/LSEs/DTsFit lists
-    df_pats = pd.DataFrame({'LSE' : LSEs, 'Sls' : Slss, 'DTsFit' : DTsFit})
-   
+    df_pats = pd.DataFrame({'LSE' : LSEs, 'Sls' : Slss, 
+                            'Name' : Name, 
+                            'Volatility_D' : Volatility_daily,
+                            'Volume' : Volume,
+                            'StartDate' : startpat})
+    #return df_pats
     # use the passed in pick_comparables function to determine the
     # indices into the lists containing our stock charts -
     # nominally these are just the charts with the n_comp lowest 
@@ -363,7 +433,7 @@ def match(df, pattern_length, pred_length, target, start_date, n_comp=20,
     PRED = np.array(prediction)
     ya = np.array(ya)
     
-    return ya, PRED, yEVAL, xvalst, xvalsp
+    return ya, PRED, yEVAL, xvalst, xvalsp, df_pats
 
     
     
